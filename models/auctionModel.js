@@ -115,8 +115,8 @@ const auctionSchema = new mongoose.Schema({
     type: Number,
   },
   hasPaid: {
-    type: String,
-  },
+    type: Boolean
+},
 });
 
 const Auction = mongoose.model('Auction', auctionSchema);
