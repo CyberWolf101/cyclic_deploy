@@ -54,6 +54,56 @@ router.get('/', async (req, res) => {
   res.json({ mssg: 'hello' })
 })
 
+router.get('/all-orders', async (req, res) => {
+  try {
+    const allOrders = await Order.find(); // Await the query execution
+    res.status(200).json({ success: true, orders: allOrders });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message }); // Send error message
+  }
+});
+
+router.put('/approve-order/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const theOrder = await Order.findOneAndUpdate(
+      { _id: orderId }, // Use _id for finding the order
+      { status: 'delivered', deliveredOn: Date.now() },
+      { new: true }
+    );
+
+    // No need to call save(), as findOneAndUpdate updates the document directly
+    res.status(200).json({ success: true, order: theOrder }); // Use 'order' instead of 'orders'
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/repost-auction/:id/:parentId', async (req, res) => {
+  const { id, parentId } = req.params;
+
+  try {
+    const currentDate = new Date();
+    const nextSevenDays = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    const theAuction = await Auction.findOneAndUpdate(
+      { auctionId: id },
+      { endDate: nextSevenDays },
+      { new: true }
+    );
+
+    const theProduct = await Product.findOneAndUpdate(
+      { product_id: parentId },
+      { endDate: nextSevenDays },
+      { new: true }
+    );
+
+    res.status(200).json({ success: true, auction: theAuction, product: theProduct });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 router.post('/paymentMade', async (req, res) => {
   try {
@@ -528,7 +578,6 @@ router.put('/updateVariations/:productId', async (req, res) => {
 
 
 
-
 router.post('/addColorNPriceVariations/:productId', upload.array('images'), async (req, res) => {
   try {
     const productId = req.params.productId;
@@ -650,7 +699,7 @@ router.post('/addVariations/:productId', upload.array('images'), async (req, res
       imageUrls = uploadResults.map((result) => result.secure_url);
     }
 
-    const { additionalName1, additionalName2, additionalName3, id } = req.body;
+    const { additionalName1, additionalName2, additionalName3, id, price } = req.body;
     console.log('Gottten from req body')
 
 
@@ -664,15 +713,15 @@ router.post('/addVariations/:productId', upload.array('images'), async (req, res
     let PriceType;
     if (Number(existingProduct.price) > 0) {
       PriceType = existingProduct.price
-    } else if (existingProduct.sizes) {
+    } else if (existingProduct.sizes && Object.keys(existingProduct.sizes).length > 0) {
       PriceType = existingProduct.sizes
-    } else if (existingProduct.numericSizeObject) {
+    } else if (existingProduct.numericSizeObject && Object.keys(existingProduct.numericSizeObject).length > 0) {
       PriceType = existingProduct.numericSizeObject
     } else {
       res.status(500).json({ error: 'could not find price' });
       return
     }
-    console.log('Price established')
+    console.log('Price established', PriceType)
 
     // Add variations to the existing product
     if (additionalName1) {
@@ -959,6 +1008,45 @@ router.post('/addAuctionItem', async (req, res) => {
   }
 });
 
+router.get('/accepted-bid', async (req, res) => {
+  try {
+    const accepted_bids = await AcceptedBid.find({
+      $or: [
+        { hasPaid: { $exists: false } }, // Check if hasPaid doesn't exist
+        { hasPaid: false } // Check if hasPaid is false
+      ]
+    });
+    res.status(200).json({ accepted_bids });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/del-accepted-Bid/:id', async (req, res) => {
+  const { id } = req.params
+  const { auctionId } = req.body
+  try {
+    const updatedAuction = await Auction.findOneAndUpdate(
+      { auctionId },
+      {
+        canAccept: true,
+        acceptedFor: '',
+        accepted_amount: 0,
+      },
+      { new: true } // Return the updated document
+    );
+
+    await AcceptedBid.findOneAndDelete({ _id: id })
+
+    res.status(200).json({ updatedAuction })
+  }
+  catch (error) {
+    console.log(error)
+    res.status(500).json({ error })
+
+  }
+});
 
 router.post('/acceptBid', async (req, res) => {
   try {
@@ -1022,6 +1110,7 @@ router.put('/bid-payed-for', async (req, res) => {
 
     const auction = JSON.parse(auctionStringified)
 
+
     await AcceptedBid.findOneAndUpdate(
       { auctionID },
       {
@@ -1031,7 +1120,7 @@ router.put('/bid-payed-for', async (req, res) => {
     );
 
     const updatedAuction = await Auction.findOneAndUpdate(
-      { productID },
+      { product_id: productID },
       {
         not_visible: true,
         user_that_paid_id: user.id,
@@ -1200,6 +1289,7 @@ router.get('/getProducts', async (req, res) => {
 });
 
 
+
 router.put('/updateProduct/:productId', async (req, res) => {
   try {
     const { productId } = req.params;
@@ -1240,9 +1330,88 @@ router.put('/updateProduct/:productId', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-
 router.post('/addProduct', upload.array('images'), async (req, res) => {
+  try {
+    const {
+      productName,
+      category,
+      price,
+      offPrice,
+      description,
+      sizeObject,
+      numericSizeObject,
+      keyFeaturesStr,
+      advancedCategory,
+      shopName,
+      subAdminID,
+      shopID,
+      id
+    } = req.body;
+
+    const images = req.files;
+    let imageUrls = [];
+    let publicIds = []; // Store public IDs of uploaded images
+
+    // Check if images were provided
+    if (!images || images.length === 0) {
+      return res.status(400).json({ error: 'No images provided' });
+    }
+
+    // Process uploaded images
+    const uploadPromises = images.map(async (file) => {
+      const uploadResult = await cloudinary.uploader.upload(file.path, {
+        resource_type: 'auto',
+      });
+      imageUrls.push(uploadResult.secure_url);
+      publicIds.push(uploadResult.public_id); // Store public ID
+    });
+
+    // Wait for all uploads to finish
+    await Promise.all(uploadPromises);
+
+    // Other processing remains unchanged
+    let discountPrice = offPrice > 0 ? price - (price * offPrice) / 100 : price;
+    console.log('numericSizeObject:', numericSizeObject);
+    console.log('sizeObject:', sizeObject);
+
+    const keyFeatures = JSON.parse(keyFeaturesStr)
+    const newProduct = new Product({
+      productName,
+      created_at: Date.now(),
+      product_id: id,
+      amount: 1,
+      categories: [...category?.split(','), ...advancedCategory?.split(',')],
+      price: Number(price),
+      offPrice: Number(offPrice),
+      description,
+      shop: shopName,
+      imageUrls,
+      product_url: imageUrls[0],
+      product_url1: imageUrls[1] || '',
+      product_url2: imageUrls[2] || '',
+      product_url3: imageUrls[3] || '',
+      isOutOfStock: false,
+      sizes: JSON.parse(sizeObject) || {},
+      variations: [],
+      subAdminID,
+      shopID,
+      discountPrice,
+      keyFeatures,
+      numericSizeObject: JSON.parse(numericSizeObject) || {},
+      publicIds: publicIds
+    });
+
+    await newProduct.save();
+
+    res.status(200).json({ message: 'Product added successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+router.post('/addProduct1', upload.array('images'), async (req, res) => {
   try {
     const {
       productName,
@@ -1292,6 +1461,7 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
       offPrice: Number(offPrice),
       description,
       shop: shopName,
+      imageUrls,
       product_url: imageUrls[0],
       product_url1: imageUrls[1] || '',
       product_url2: imageUrls[2] || '',
@@ -1367,6 +1537,7 @@ router.post('/addProduct2', upload.array('images'), async (req, res) => {
       offPrice: Number(offPrice),
       description,
       shop: shopName,
+      imageUrls,
       product_url: imageUrls[0],
       product_url1: imageUrls[1] || '',
       product_url2: imageUrls[2] || '',
