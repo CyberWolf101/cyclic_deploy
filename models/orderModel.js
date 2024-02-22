@@ -99,6 +99,9 @@ const orderSchema = new mongoose.Schema({
         type: Boolean,
         default: true,
     },
+    deliveredOn: {
+        type: Number,
+    },
     auctionId: {
         type: String,
     },
