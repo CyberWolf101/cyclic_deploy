@@ -15,6 +15,8 @@ const productSchema = new mongoose.Schema({
   shop: String,
   product_url: String,
   auctionType: String,
+  imageUrls: [String],
+  publicIds: [String],
   product_url1: String,
   product_url2: String,
   product_url3: String,
@@ -37,7 +39,6 @@ const productSchema = new mongoose.Schema({
     default: 0,
   },
   promoStart: Number,
-  promotEnd: Number,
   sizes: {
     type: Object,
     required: true,
