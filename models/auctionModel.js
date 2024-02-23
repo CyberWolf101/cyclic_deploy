@@ -82,6 +82,14 @@ const auctionSchema = new mongoose.Schema({
     type: [],
     default: [],
   },
+  publicIds: {
+    type: [],
+    default: [],
+  },
+  images: {
+    type: [],
+    default: [],
+  },
   canAccept: {
     type: Boolean,
     default: true,
@@ -99,7 +107,6 @@ const auctionSchema = new mongoose.Schema({
   },
   parent_Product_Id: {
     type: String,
-    required: true,
   },
   not_visible: {
     type: Boolean,
@@ -116,7 +123,13 @@ const auctionSchema = new mongoose.Schema({
   },
   hasPaid: {
     type: Boolean
-},
+  },
+  isUserAuction: {
+    type: Boolean
+  },
+  auctionerPhone: {
+    type: String
+  }
 });
 
 const Auction = mongoose.model('Auction', auctionSchema);
