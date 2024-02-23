@@ -903,7 +903,78 @@ router.delete('/deleteAuctionAndUpdateProduct/:auctionId/:productId', async (req
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+router.delete('/deleteAuction/:auctionId', async (req, res) => {
+  try {
+    const { auctionId } = req.params;
 
+    // Delete auction
+    const deletedAuction = await Auction.findOneAndDelete({ auctionId });
+
+    if (!deletedAuction) {
+      return res.status(404).json({ error: 'Auction not found' });
+    }
+
+
+    res.status(200).json({ deletedAuction });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+router.delete('/deleteAuctionAndUpdateProduct/:auctionId/:productId', async (req, res) => {
+  try {
+    const { auctionId, productId } = req.params;
+
+    // Delete auction
+    const deletedAuction = await Auction.findOneAndDelete({ auctionId });
+
+    if (!deletedAuction) {
+      return res.status(404).json({ error: 'Auction not found' });
+    }
+
+    // Update product
+    const updatedProduct = await Product.findOneAndUpdate(
+      { product_id: productId },
+      { isAuctioned: false },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.status(200).json({ deletedAuction, updatedProduct });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
+
+router.put('/updateAuctionAndProductForUser/:auctionId', async (req, res) => {
+  try {
+    const { auctionId } = req.params;
+    const { price, auctionType } = req.body;
+
+
+    const updatedAuction = await Auction.findOneAndUpdate(
+      { auctionId },
+      { price: Number(price), auctionType },
+      { new: true } // Return the updated document
+
+    );
+
+
+    res.status(200).json({ updatedAuction });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 
 
@@ -1008,6 +1079,101 @@ router.post('/addAuctionItem', async (req, res) => {
   }
 });
 
+
+router.post('/addAuctionItemForUser', upload.array('images'), async (req, res) => {
+  try {
+    const {
+      productName,
+      price,
+      description,
+      auctionType,
+      userDetails,
+      endDate,
+      id
+    } = req.body;
+
+    const images = req.files;
+    let imageUrls = [];
+    let publicIds = [];
+
+    console.log(
+      userDetails)
+    console.log(images)
+
+    if (images && images.length > 0 && images !== null) {
+      const uploadPromises = images.map(async (file) => {
+        return await cloudinary.uploader.upload(file.path, {
+          resource_type: 'auto',
+        });
+      });
+
+      const uploadResults = await Promise.all(uploadPromises);
+      imageUrls = uploadResults.map((result) => result.secure_url);
+      publicIds = uploadResults.map((result) => result.public_id);
+    }
+    console.log('images uploaded')
+
+
+    const newAuction = new Auction({
+      productName,
+      created_at: Date.now(),
+      product_id: id,
+      auctionId: id,
+      phone: JSON.parse(userDetails).phone,
+      auctioner_email: JSON.parse(userDetails).email,
+      price: Number(price),
+      description: description,
+      userID: JSON.parse(userDetails).id,
+      isOutOfStock: false,
+      bids: 0,
+      highestBid: 0,
+      biders: [],
+      canAccept: true,
+      not_visible: false,
+      endDate,
+      publicIds,
+      images: imageUrls,
+      product_url: imageUrls[0],
+      auctionType,
+      isUserAuction: true
+    });
+
+    await newAuction.save();
+
+
+    res.status(200).json({ message: 'Auction item added successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+router.get('/get-user-auctions/:userID', async (req, res) => {
+
+  const { userID } = req.params
+
+  try {
+    const auction = await Auction.find({ userID })
+    res.status(200).send(auction)
+
+  } catch (error) {
+    res.status(500).send(error)
+    console.log(error)
+  }
+})
+router.delete('/delete-user-auctions/:id', async (req, res) => {
+
+  const { id } = req.params
+
+  try {
+    const auction = await Auction.findOneAndDelete({ id })
+    res.status(200).send('deelted')
+
+  } catch (error) {
+    res.status(500).send(error)
+    console.log(error)
+  }
+})
 router.get('/accepted-bid', async (req, res) => {
   try {
     const accepted_bids = await AcceptedBid.find({
