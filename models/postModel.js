@@ -33,6 +33,27 @@ const adSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    timesToPost: {
+        type: Number,
+        required: true,
+    },
+    timesPostedToday: {
+        type: Number,
+        default: 0,
+
+    },
+    hourPosted: {
+        type: Number,
+        default: 0,
+    },
+    paid: {
+        type: Number,
+        default: 0,
+    },
+    currentDate: {
+        type: Date,
+        default: Date.now(), // Set the default value to the current date
+    },
 });
 
 const Ad = mongoose.model("ads", adSchema);
