@@ -17,6 +17,7 @@ const Product = require('./models/productModal')
 const Auction = require('./models/auctionModel')
 const AcceptedBid = require('./models/acceptedBidModel')
 const Order = require('./models/orderModel')
+const posRouter = require('./Routes/pos');
 
 app.use(cors());
 
@@ -53,6 +54,8 @@ const upload = multer({ storage: storage });
 router.get('/', async (req, res) => {
   res.json({ mssg: 'hello' })
 })
+
+
 
 router.get('/all-orders', async (req, res) => {
   try {
@@ -1089,7 +1092,12 @@ router.post('/addAuctionItemForUser', upload.array('images'), async (req, res) =
       auctionType,
       userDetails,
       endDate,
-      id
+      id,
+      selectedCondition,
+      selectedConditionDescription,
+      defects,
+      color,
+      minOffer
     } = req.body;
 
     const images = req.files;
@@ -1135,7 +1143,12 @@ router.post('/addAuctionItemForUser', upload.array('images'), async (req, res) =
       images: imageUrls,
       product_url: imageUrls[0],
       auctionType,
-      isUserAuction: true
+      isUserAuction: true,
+      selectedCondition: selectedCondition || '',
+      selectedConditionDescription: selectedConditionDescription || '',
+      defects: defects || '',
+      color: color || '',
+      minOffer: minOffer || 0
     });
 
     await newAuction.save();
@@ -1535,8 +1548,22 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
     // Wait for all uploads to finish
     await Promise.all(uploadPromises);
 
-    // Other processing remains unchanged
-    let discountPrice = offPrice > 0 ? price - (price * offPrice) / 100 : price;
+    function calculateDiscountPercentage(price, offPrice) {
+      let percentageDiscount = ((price - offPrice) / price) * 100;
+      return percentageDiscount;
+    }
+    let percentageDiscount
+    console.log("The discount is " + parseInt(percentageDiscount) + "% off.");
+    let discountPrice
+
+    if (offPrice > 0) {
+      percentageDiscount = calculateDiscountPercentage(price, offPrice);
+    } else {
+      percentageDiscount = 0
+    }
+    discountPrice = offPrice > 0 ? offPrice : price;
+    // discountPrice   = offPrice > 0 ? price - (price * offPrice) / 100 : price;
+
     console.log('numericSizeObject:', numericSizeObject);
     console.log('sizeObject:', sizeObject);
 
@@ -1548,7 +1575,7 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
       amount: 1,
       categories: [...category?.split(','), ...advancedCategory?.split(',')],
       price: Number(price),
-      offPrice: Number(offPrice),
+      offPrice: Number(percentageDiscount),
       description,
       shop: shopName,
       imageUrls,
@@ -1709,13 +1736,12 @@ router.post('/addProduct2', upload.array('images'), async (req, res) => {
       product_url2: imageUrls[2] || '',
       product_url3: imageUrls[3] || '',
       isOutOfStock: false,
-      // sizes: JSON.parse(sizeObject) || {},
-      variations: [],
+      sizes: JSON.parse(sizeObject) || {},
+      numericSizeObject: JSON.parse(numericSizeObject) || {},
       subAdminID,
       shopID,
       discountPrice,
       keyFeatures,
-      // numericSizeObject: JSON.parse(numericSizeObject) || {},
     });
 
     await newProduct.save();
@@ -1732,7 +1758,7 @@ router.post('/addProduct2', upload.array('images'), async (req, res) => {
 
 router.post('/postAd', upload.single('img'), async (req, res) => {
   try {
-    const { description, title, link, expires, userID, type } = req.body;
+    const { description, title, link, expires, userID, type, timesToPost, paid } = req.body;
 
     let formatedLink = link.includes('https://') ? link : `https://${link}`;
     let url;
@@ -1752,6 +1778,8 @@ router.post('/postAd', upload.single('img'), async (req, res) => {
       expires,
       type,
       hasExpired: false,
+      timesToPost,
+      paid
     });
 
     await newAd.save();
@@ -1765,17 +1793,114 @@ router.post('/postAd', upload.single('img'), async (req, res) => {
   }
 });
 
-
-// get Ads
-router.get('/getAds', async (req, res) => {
+router.put('/renewAd/:id', upload.none(), async (req, res) => {
   try {
-    const ads = await Ad.find();
-    res.status(200).json({ ads });
+    const { expires, type, paid } = req.body;
+    const { id } = req.params;
+
+
+    console.log(id, type, expires, paid)
+
+    // Check if the provided ID is valid
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid ID provided' });
+    }
+
+    // Check if the provided expires value is a valid number
+    if (isNaN(expires)) {
+      return res.status(400).json({ error: 'Invalid expires value' });
+    }
+
+    // Update the ad with the provided ID
+    const updatedAd = await Ad.findByIdAndUpdate(id, { expires, type, paid }, { new: true });
+
+    // Check if the ad with the provided ID exists
+    if (!updatedAd) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    res.status(200).json({ success: true, updatedAd });
+  } catch (error) {
+    console.error('Error updating ad:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+router.get('/getSingleAd/:id', async (req, res) => {
+  const { id } = req.params
+  try {
+    const ad = await Ad.findOne({ _id: id });
+    res.status(200).json({ ad });
   } catch (error) {
     console.error('Error fetching ads:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+
+// Function to reset fields for all ads when a new day starts
+async function resetAdFieldsForNewDay() {
+  const currentDate = new Date();
+  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  try {
+    await Ad.updateMany(
+      { currentDate: { $ne: today } }, // Find ads where currentDate is not today
+      { $set: { currentDate: today, timesPostedToday: 0, hourPosted: 0 } } // Reset relevant fields
+    );
+  } catch (error) {
+    console.error('Error resetting fields for ads:', error);
+  }
+}
+router.get('/getAds', async (req, res) => {
+  try {
+    // Reset fields for all ads at the start of a new day
+    await resetAdFieldsForNewDay();
+
+    // Find ads where timesToPost is greater than timesPostedToday
+    const ads = await Ad.aggregate([
+      {
+        $addFields: {
+          remainingTimesToPost: { $subtract: ["$timesToPost", "$timesPostedToday"] }
+        }
+      },
+
+      {
+        $match: {
+          $and: [
+            { remainingTimesToPost: { $gt: 0 } },
+            { expires: { $gte: Date.now() } }
+          ]
+        }
+      }
+    ]);
+
+    // Update timesPostedToday and hourPosted for each ad
+    const currentDate = new Date();
+    const currentHour = currentDate.getHours();
+
+    // Update each ad's timesPostedToday and hourPosted fields
+    for (const ad of ads) {
+      // Update timesPostedToday if the ad was posted on a previous day
+      if (ad.currentDate.getDate() !== currentDate.getDate()) {
+        ad.timesPostedToday = 1;
+      } else {
+        ad.timesPostedToday++;
+      }
+      // Update hourPosted
+      ad.hourPosted = currentHour;
+      // Save the changes to the ad
+      await Ad.findByIdAndUpdate(ad._id, { $set: { timesPostedToday: ad.timesPostedToday, hourPosted: ad.hourPosted } });
+    }
+
+    // Send the filtered ads as a response
+    res.status(200).json({ ads });
+  } catch (error) {
+    console.error('Error fetching and updating ads:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 
 router.get('/nairalandProducts/:fixedPrice', async (req, res) => {
   try {
