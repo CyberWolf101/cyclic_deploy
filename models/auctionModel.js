@@ -21,6 +21,26 @@ const auctionSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  selectedCondition: {
+    type: String,
+    default: ''
+  },
+  selectedConditionDescription: {
+    type: String,
+    default: ''
+  },
+  defects: {
+    type: String,
+    default: ''
+  },
+  color: {
+    type: String,
+    default: ''
+  },
+  minOffer: {
+    type: Number,
+    default: ''
+  },
 
   accepted_amount: {
     type: Number,
