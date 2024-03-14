@@ -106,6 +106,25 @@ router.put('/repost-auction/:id/:parentId', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+router.put('/repost-user-auction/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const currentDate = new Date();
+    const nextSevenDays = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    const theAuction = await Auction.findOneAndUpdate(
+      { auctionId: id },
+      { endDate: nextSevenDays },
+      { new: true }
+    );
+
+
+    res.status(200).json({ success: true, auction: theAuction });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 
 router.post('/paymentMade', async (req, res) => {
@@ -1483,6 +1502,19 @@ router.put('/updateProduct/:productId', async (req, res) => {
       numericSizeObject,
     } = req.body;
 
+    function calculateDiscountPercentage(price, offPrice) {
+      let percentageDiscount = ((price - offPrice) / price) * 100;
+      return percentageDiscount;
+    }
+    let percentageDiscount
+    let discountPrice
+
+     if (offPrice > 0) {
+      percentageDiscount = calculateDiscountPercentage(price, offPrice);
+    } else {
+      percentageDiscount = 0
+    }
+    discountPrice = offPrice > 0 ? offPrice : price;
     // Find and update the product
     const updatedProduct = await Product.findOneAndUpdate(
       { product_id: productId },
@@ -1490,11 +1522,12 @@ router.put('/updateProduct/:productId', async (req, res) => {
         productName,
         category,
         price: Number(price),
-        offPrice: Number(offPrice),
+        offPrice: Number(percentageDiscount),
         description,
         isOutOfStock,
         sizes,
         numericSizeObject,
+        discountPrice
       },
       { new: true } // Return the updated document
     );
