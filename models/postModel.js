@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const Schema = mongoose.Schema;
 
 const adSchema = new mongoose.Schema({
     userID: {
@@ -17,10 +16,6 @@ const adSchema = new mongoose.Schema({
     link: {
         type: String,
     },
-    imgUrl: {
-        type: String,
-        required: true,
-    },
     expires: {
         type: Number,
         required: true,
@@ -33,19 +28,7 @@ const adSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
-    timesToPost: {
-        type: Number,
-        required: true,
-    },
-    timesPostedToday: {
-        type: Number,
-        default: 0,
 
-    },
-    hourPosted: {
-        type: Number,
-        default: 0,
-    },
     paid: {
         type: Number,
         default: 0,
@@ -53,6 +36,18 @@ const adSchema = new mongoose.Schema({
     currentDate: {
         type: Date,
         default: Date.now(), // Set the default value to the current date
+    },
+    imageUrls: {
+        type: Array,
+        required: true,
+    },
+    publicIds: {
+        type: Array,
+        required: true,
+    },
+    pages: {
+        type: Number,
+        required: true,
     },
 });
 
