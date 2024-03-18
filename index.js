@@ -18,7 +18,7 @@ const Auction = require('./models/auctionModel')
 const AcceptedBid = require('./models/acceptedBidModel')
 const Order = require('./models/orderModel')
 const posRouter = require('./Routes/pos');
-
+const classifedRouter = require('./Routes/classified')
 app.use(cors());
 
 
@@ -50,6 +50,7 @@ const upload = multer({ storage: storage });
 
 
 
+app.use("/classified", classifedRouter);
 
 router.get('/', async (req, res) => {
   res.json({ mssg: 'hello' })
@@ -1509,7 +1510,7 @@ router.put('/updateProduct/:productId', async (req, res) => {
     let percentageDiscount
     let discountPrice
 
-     if (offPrice > 0) {
+    if (offPrice > 0) {
       percentageDiscount = calculateDiscountPercentage(price, offPrice);
     } else {
       percentageDiscount = 0
@@ -1789,29 +1790,37 @@ router.post('/addProduct2', upload.array('images'), async (req, res) => {
   }
 });
 
-router.post('/postAd', upload.single('img'), async (req, res) => {
+router.post('/postAd', upload.array('imgs'), async (req, res) => {
   try {
     const { description, title, link, expires, userID, type, timesToPost, paid } = req.body;
-
+    const images = req.files;
     let formatedLink = link.includes('https://') ? link : `https://${link}`;
-    let url;
+    let imageUrls = []
+    let publicIds = []
 
-    if (req.file) {
-      const result = await cloudinary.uploader.upload(req.file.path, { resource_type: 'auto' });
-      url = result.secure_url;
-    }
+    const uploadPromises = images.map(async (file) => {
+      const uploadResult = await cloudinary.uploader.upload(file.path, {
+        resource_type: 'auto',
+      });
+      imageUrls.push(uploadResult.secure_url);
+      publicIds.push(uploadResult.public_id);
+    });
+
+    // Wait for all uploads to finish
+    await Promise.all(uploadPromises);
 
 
     const newAd = new Ad({
       description,
       title,
       link: formatedLink,
-      imgUrl: url,
+      imageUrls,
+      publicIds,
       userID,
       expires,
       type,
       hasExpired: false,
-      timesToPost,
+      pages: timesToPost + 1,
       paid
     });
 
@@ -1870,68 +1879,61 @@ router.get('/getSingleAd/:id', async (req, res) => {
   }
 });
 
-
-// Function to reset fields for all ads when a new day starts
-async function resetAdFieldsForNewDay() {
-  const currentDate = new Date();
-  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+router.get('/getPageAds/:pages', async (req, res) => {
+  const pages = req.params.pages
+  console.log('running')
   try {
-    await Ad.updateMany(
-      { currentDate: { $ne: today } }, // Find ads where currentDate is not today
-      { $set: { currentDate: today, timesPostedToday: 0, hourPosted: 0 } } // Reset relevant fields
-    );
-  } catch (error) {
-    console.error('Error resetting fields for ads:', error);
-  }
-}
-router.get('/getAds', async (req, res) => {
-  try {
-    // Reset fields for all ads at the start of a new day
-    await resetAdFieldsForNewDay();
+    // Find all ads that are not expired
+    const requestedPages = Number(pages)
+    console.log("__________pages_______", pages)
+    const ads = await Ad.find({ expires: { $gt: Date.now() }, pages: { $gt: requestedPages } });
 
-    // Find ads where timesToPost is greater than timesPostedToday
-    const ads = await Ad.aggregate([
-      {
-        $addFields: {
-          remainingTimesToPost: { $subtract: ["$timesToPost", "$timesPostedToday"] }
-        }
-      },
+    // Shuffle the ads randomly
+    const shuffledAds = ads.sort(() => Math.random() - 0.5);
 
-      {
-        $match: {
-          $and: [
-            { remainingTimesToPost: { $gt: 0 } },
-            { expires: { $gte: Date.now() } }
-          ]
-        }
-      }
-    ]);
+    // Send only the first two ads
+    const selectedAds = shuffledAds.slice(0, 2);
 
-    // Update timesPostedToday and hourPosted for each ad
-    const currentDate = new Date();
-    const currentHour = currentDate.getHours();
-
-    // Update each ad's timesPostedToday and hourPosted fields
-    for (const ad of ads) {
-      // Update timesPostedToday if the ad was posted on a previous day
-      if (ad.currentDate.getDate() !== currentDate.getDate()) {
-        ad.timesPostedToday = 1;
-      } else {
-        ad.timesPostedToday++;
-      }
-      // Update hourPosted
-      ad.hourPosted = currentHour;
-      // Save the changes to the ad
-      await Ad.findByIdAndUpdate(ad._id, { $set: { timesPostedToday: ad.timesPostedToday, hourPosted: ad.hourPosted } });
-    }
-
-    // Send the filtered ads as a response
-    res.status(200).json({ ads });
+    // Send the selected ads as a response
+    res.status(200).send(selectedAds);
   } catch (error) {
     console.error('Error fetching and updating ads:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+
+// router.get('/getAds/:pages', async (req, res) => {
+//   try {
+//     // Extract the number of pages from the request parameters
+//     const requestedPages = parseInt(req.params.pages);
+
+//     // Find all ads that are not expired and have page numbers less than or equal to the requested number of pages
+//     // const ads = await Ad.find({ expires: { $gt: Date.now() }, pages: { $lte: requestedPages } });
+
+//     const ads = await Ad.find({ expires: { $gt: Date.now() } });
+//     // If there are no matching ads, return an empty array
+//     // if (ads.length === 0) {
+//     //   return res.status(200).send([]);
+//     // }
+
+//     // Shuffle the ads randomly
+//     // Shuffle the ads randomly
+//     const shuffledAds = ads.sort(() => Math.random() - 0.5);
+
+//     // Send only the first two ads
+//     const selectedAds = shuffledAds.slice(0, 2);
+
+//     // Send the selected ads as a response
+//     res.status(200).send(selectedAds);
+//   } catch (error) {
+//     console.error('Error fetching and updating ads:', error);
+//     res.status(500).json({ error: 'Internal Server Error' });
+//   }
+// });
+
+
+
 
 
 
