@@ -599,7 +599,67 @@ router.put('/updateVariations/:productId', async (req, res) => {
   }
 });
 
+// check point
+router.post('/addNewProductVariation/:productId', upload.array('images'), async (req, res) => {
+  try {
+    const productId = req.params.productId;
 
+    const images = req.files;
+    let imageUrls = [];
+    console.log('images', images)
+
+
+    if (images && images.length > 0 && images !== null) {
+      const uploadPromises = images.map(async (file) => {
+        return await cloudinary.uploader.upload(file.path, {
+          resource_type: 'auto',
+        });
+      });
+      console.log('Uploaded imgs')
+      // Wait for all uploads to finish and collect URLs
+      const uploadResults = await Promise.all(uploadPromises);
+      imageUrls = uploadResults.map((result) => result.secure_url);
+    }
+    console.log('saved sedure_url')
+
+    const { variationsString } = req.body;
+    console.log('variations', variationsString)
+    const variations = JSON.parse(variationsString)
+
+    // Fetch the existing product
+    const existingProduct = await Product.findOne({ product_id: productId });
+
+    console.log('existingProduct', existingProduct)
+
+    const variations_with_img_url = variations.map((variant, index) => ({
+      ...variant,
+      product_url: imageUrls[index],
+      keyFeatures: '',
+      isVariation: true,
+      parentID: existingProduct.product_id,
+      amount: 1,
+      isOutOfStock: false,
+      productName: existingProduct.productName + variant.variation,
+      product_id: Date.now() + Math.random(),
+      type: variant.variation,
+      subAdminID: existingProduct.subAdminID
+    }));
+
+
+
+    existingProduct.variations = variations_with_img_url;
+
+    console.log('variations_with_img_url', variations_with_img_url)
+    console.log('existingProduct variations', existingProduct.variations)
+
+    await existingProduct.save();
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 router.post('/addColorNPriceVariations/:productId', upload.array('images'), async (req, res) => {
   try {
@@ -1558,12 +1618,14 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
       shopName,
       subAdminID,
       shopID,
-      id
+      id,
+      variations
     } = req.body;
 
     const images = req.files;
     let imageUrls = [];
     let publicIds = []; // Store public IDs of uploaded images
+
 
     // Check if images were provided
     if (!images || images.length === 0) {
@@ -1622,7 +1684,7 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
       variations: [],
       subAdminID,
       shopID,
-      discountPrice,
+      discountPrice: parseInt(discountPrice),
       keyFeatures,
       numericSizeObject: JSON.parse(numericSizeObject) || {},
       publicIds: publicIds
@@ -1630,7 +1692,7 @@ router.post('/addProduct', upload.array('images'), async (req, res) => {
 
     await newProduct.save();
 
-    res.status(200).json({ message: 'Product added successfully' });
+    res.status(200).json({ message: 'Product added successfully', id: id });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal Server Error' });
